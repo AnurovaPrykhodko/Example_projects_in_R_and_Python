@@ -1,0 +1,289 @@
+---
+title: "Laboration 3"
+output: github_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+
+# Läser in paket och filer.
+
+library(tidyverse)
+library(sf)
+
+kommun_data <- read_csv("data/kommun_pop_2022-06-15.csv")
+
+forgein <- read_csv(
+  "data/utl_harkomst_2022-06-15.csv",
+  locale = locale(encoding = "ISO-8859-1"),
+  skip = 1
+)
+
+inkomst <- read_delim(
+  "data/inkomst_2022-06-15.csv",
+  delim = "\t",
+  locale = locale(encoding = "ISO-8859-1")
+)
+
+brott <- readxl::read_excel("data/Kolada_vldsbrott_2022-06-15.xlsx", skip = 1)
+
+parti <- readxl::read_excel("data/2018_K_per_kommun.xlsx", sheet = "K antal", range = "A1:M291")
+
+download.file(
+  "https://raw.githubusercontent.com/MT3003-ST22/data/main/exp_behorig_gy_kommun_2019_20.csv",
+  "data/exp_behorig_gy_kommun_2019_20.csv"
+  ) 
+
+list_of_files <- list.files(
+  path = "data",
+  recursive = TRUE,
+  full.names = TRUE,
+  pattern = "^exp"
+  )
+
+gymnasium <- read_delim(
+  list_of_files,
+  id = "file_name",
+  delim = ";",
+  escape_double = FALSE,
+  col_types = cols("Andel elever (%) ej behöriga" = col_double()),
+  locale = locale(decimal_mark = ",", grouping_mark = "."),
+  trim_ws = TRUE, 
+  skip = 9
+  )
+
+Line <- read_csv("data/Line.csv")
+
+LinePlatform <- read_csv("data/LinePlatform.csv")
+
+Platform <- read_csv("data/Platform.csv")
+
+download.file(
+  "https://github.com/MT3003-ST22/data/raw/main/KommunSweref99TM.zip",
+  "KommunSweref99TM.zip")
+
+unzip("KommunSweref99TM.zip", exdir = "data/KommunSweref99TM")
+
+swe_map <- st_read("data/KommunSweref99TM/Kommun_Sweref99TM_region.shp", quiet = TRUE)
+```
+
+### Kommundata
+
+* **A:** Andel invånare med utländsk härkomst
+
+```{r tabell A}
+Forgein <- forgein %>% 
+  # Kolumm för år skapas
+  pivot_longer(
+    c(`2002`:`2021`),
+    names_to = "year",
+    values_to = "count",
+    names_transform = list(year = as.double)
+  ) %>%
+  # Bakgrund delas upp i två
+  pivot_wider(
+    names_from = `utländsk/svensk bakgrund`,
+    values_from = count
+  ) %>%
+  # Tar ut procent utländska 
+  mutate(forgein_perc = `utländsk bakgrund` / (`utländsk bakgrund` + `svensk bakgrund`) * 100) %>%
+  separate(region, into = c("code", "name"), extra = "merge") %>%
+  select(code, name, year, forgein_perc)
+
+Forgein
+```
+* **B:** Medelinkomst
+
+```{r tabell B}
+# Tar ut det som ska användas
+Inkomst <- inkomst %>%
+  select("region", "år", "Totalsumma, mnkr", "Antal personer") %>% 
+  separate(region, into = c("code", "name"), extra = "merge") %>%
+  rename("year" = år) %>%
+  group_by(code, name, year) %>% 
+  summarise(summa = sum(`Totalsumma, mnkr`), personer = sum(`Antal personer`)) %>%
+  # Tar fram medelmånadslön
+  mutate(income = summa / (personer * 12) * 1000) %>%
+  select(code, name, year, income)
+
+Inkomst
+```
+
+* **C:** Våldsbrott
+
+```{r tabell C}
+Brott <- brott %>% 
+  # Skapar kolumm för år
+  pivot_longer(
+    c(`2000`:`2021`),
+    names_to = "year",
+    values_to = "viol_crime",
+    names_transform = list(year = as.double)
+    ) %>%
+# Tar ut det vi vill ha
+  rename("name" = "Område") %>%
+  select(name, year, viol_crime) %>%
+  filter(name != "Alla kommuner")
+
+Brott
+```
+
+* **D:** Största parti
+
+```{r tabell D}
+# Skapar komunkod
+Parti <- parti %>%
+  unite("code","LÄNSKOD", "KOMMUNKOD", sep = "") %>%
+  mutate(code = str_pad(string = code, width = 4, pad = 0, side = "left")) %>%
+  right_join(parti) %>%
+  # Skapar kolumm för parti och tar ut de med flest röster i varje kommun
+  pivot_longer(
+    c("M":"FI"),
+    names_to = "largest_party",
+    values_to = "roster") %>%
+  group_by(code) %>%
+  top_n(1) %>%
+  rename("name" = "KOMMUNNAMN") %>%
+  select("KOMMUNKOD", "code", "name", "largest_party")
+
+Parti
+```
+
+* **E:** Andel elever ej behöriga till gymnasiet
+```{r tabell E}
+# Ser till så att data från respektive år är märkt
+gymnasium2 <- gymnasium %>%
+  separate("file_name", into = c("file", "years"), sep = -6 ) %>%
+  separate("years", into = c("ar"), sep = 2 ) %>%
+  mutate(
+    ar = str_pad(string = ar, width = 3, pad = 0, side = "left"),
+    ar = str_pad(string = ar, width = 4, pad = 2, side = "left")
+    )
+
+# Gör year till double
+year <- pull(gymnasium2, `ar`) %>% as.numeric()
+
+gymnasium3 <- add_column(gymnasium2, year)
+
+# Tar ut data för samtliga
+Gymnasium <- gymnasium3 %>%
+  rename(
+    "not_qualified_perc" = "Andel elever (%) ej behöriga",
+    "code" = "Kommun-kod",
+    "name" = "Kommun",
+    ) %>%
+  filter(`Kön` == "Samtliga" & `Typ av huvudman` == "Samtliga") %>%
+  select(code, name, year, not_qualified_perc) 
+
+Gymnasium
+```
+Här ser vi att för Arjeplog står det NA för 2017, skulle kunna vara så att det inte togs någon information alternativt att alla blev behöriga. Vid närmare titt visas det att NA kan vara för både och, i detta fall blev alla i Arjeplog behöriga, men det gäller inte för alla rader med NA.  
+
+* **Slå samman och illustrera**
+
+```{r kombinera}
+# Separerar kommunkod och namn
+  kommun_data2 <- kommun_data %>%
+  separate(region, into = c("code", "name"), extra = "merge") %>%
+  rename("year" = "år")
+
+# Kombinerar tabeller
+kommun_allt <- kommun_data2 %>%
+  full_join(Forgein, by = c("code", "year")) %>%
+  full_join(Inkomst, by = c("code", "year")) %>%
+  full_join(Brott, by = c("name", "year")) %>%
+  full_join(Gymnasium, by = c("code", "year")) %>%
+  full_join(Parti, by = c("code"))
+
+# Filtrerar ut Stockholms län 2020 samt illustrerar
+kommun_allt %>%
+  filter(str_detect(code, "^01"), year == "2020", !is.na(not_qualified_perc)) %>%
+  ggplot() +
+  geom_text(label = "2020", x = 11, y = 40, alpha = 0.005, size = 30) +
+  geom_point(aes(not_qualified_perc, forgein_perc, color = name, size = Folkmängd)) +
+  labs(
+    title = "Med utländsk härkomst ökar ej behöriga",
+    x = "Ej behöriga till gymnasiet (%)",
+    y = "Utländsk härkomst (%)",
+    color = "Kommunnamn") 
+  
+```
+
+
+Andel elever ej behöriga till gymnasiet verkar vara relaterbart med utländsk härkomst, barnen kan exempelvis ha svårare för språk alternativt ha föräldrar som inte kan hjälpa till med just svenska och engelska. Vi ser även att ställen där andel utländska är mindre och kan ha en högre andel ej behöriga, av den uppenbara anledningen att även andra faktorer spelar in. 
+
+* **Illustrera på karta**
+
+Först tar vi ut den kommunen som har olika namn i de olika tabellerna.
+
+```{r olika_namn}
+# Ser vad som ej kommer med
+anti_join(swe_map, kommun_allt, by = c("KnNamn" = "name")) %>%
+  glimpse()
+
+# Kollar upp vad kommunen heter i denna tabell
+kommun_allt %>%
+  filter(code == "2023") %>%
+  select(name)
+```
+
+Vi ser att det är Malung, som i kommun_allt heter Malung-Sälen. För nästa uppgift, att plotta variabel för ett viss län, väljer vi länskod 20 och ändrar därmed namnet till Malung för att kunna få med den datan. 
+
+
+```{r karta}
+# Ändrar namn till Malung, kombinerar tabeller
+kommun_allt %>%
+  mutate(name = str_replace_all(name, "Malung-Sälen", "Malung")) %>%
+  full_join(swe_map, by = c("code" = "KnKod")) %>%
+  # Filtrerar ut Dalarna, år 2018, illustrerar
+  filter(str_detect(code, "^20"), year == "2018") %>%
+  ggplot(aes(geometry = geometry, fill = largest_party)) +
+  geom_sf() +
+  geom_sf_text(aes(label = name)) +
+  labs(
+    title = "År 2018 röstade majoriteten i Dalarna på center och socialdemokraterna",
+    fill = "Största parti"
+    ) +
+  theme_void()
+```
+Här ser vi en tom bit på kartan, skulle kunna innebära förlorad data, men i detta fall är det en sjö. 
+
+### Tunnelbanerelationer
+
+* **Kombination till en tabell**
+
+```{r kombination_tabell}
+# Tabellerna sammanfogas med all dess information utifrån keys
+tunnelbana <- Line %>%
+  full_join(LinePlatform, by = "LineNumber") %>%
+  full_join(Platform, by = "PlatformNumber") %>%
+  # För vissa rader saknas det information, de tar vi bort
+  filter(!is.na(LineNumber))
+
+tunnelbana
+```
+Nu har vi en tabell som är enklare att arbeta med.
+
+* **Stationer som trafikeras av fler än en linje**
+
+```{r trafik_flera}
+# För varje station tas antal unika linjer ut
+tunnelbana %>%
+  group_by(StationName) %>%
+  summarise(Antal_linjer = n_distinct(LineName)) %>%
+  # Filtrerar bort de som endast trafikeras av en linje
+  filter(Antal_linjer > 1)
+```
+
+Att stationerna trafikeras av flera linjer är enkelt att bekräfta av mig som bor i Stockholm.
+
+* **Unika plattformar per linje**
+
+```{r unika_plattformar}
+# För varje linje tas antal unika plattformar ut
+tunnelbana %>%
+  group_by(LineName) %>%
+  summarise(Platforms = n_distinct(PlatformNumber))
+```
+
+Gröna linjen trafikerar flest plattformar, rimligt eftersom den delas upp mer än de andra. Medan blå trafikerar minst eftersom den endast går två håll från Kungsträgården. 
