@@ -6,7 +6,7 @@
 
 Most recent, used for processing data taken from a lab, to create figures and tables for a report. This was never handed in, just for my own use. 
 
-Code file: [nuclearlab.R](nuclearlab.R)
+Code file: [nuclearlab.R](nuclearlab/nuclearlab.R)
 
 Example of figure: [model_data.png](model_data.png)
 
