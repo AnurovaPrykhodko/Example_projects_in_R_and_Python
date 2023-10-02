@@ -1,0 +1,237 @@
+---
+title: "Laboration 4"
+author: 
+date:
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+
+library(tidyverse)
+
+```
+
+## SMHI
+
+* **Funktion för att få temperaturer** 
+
+```{r gettemp}
+
+get_temp <- function(station){
+#Anpassar url efter station
+  url <- paste0(
+    "https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/1/station/",
+    station,
+    "/period/latest-months/data.json"
+    )
+  
+#Hämtar API 
+  response <- httr::GET(url)
+  
+  smhi <- httr::content(response, as = "text") %>% jsonlite::fromJSON()
+
+#Gör om till tibble samt tar fram datum och tid
+  as_tibble(c(smhi$station, smhi$value)) %>%
+    mutate(
+      station = key,
+      temp = value,
+      datetime = lubridate::as_datetime(date / 1000),
+      date = format(datetime, "%Y-%m-%d"),
+      time = format(datetime, "%T")
+    ) %>%
+    select(station, date, time, temp)
+}
+
+#testar att den fungerar
+get_temp(159880)
+
+```
+
+* **Funktion för tropiska datum**
+
+```{r tropiska datum}
+
+tropical_dates <- function(station, mintemp = 18){
+  
+  temp_station <- get_temp(station) %>%
+    mutate(temp = temp %>% as.double())
+  
+#Delar in i två grupper, ena över mintemp och andra under
+  high <- temp_station %>%
+    group_by(date, station) %>%
+    filter(temp >= mintemp) 
+  
+  low <- temp_station %>%
+    group_by(date, station) %>%
+    filter(temp < mintemp) 
+
+#Vi vill endast ha de datum i grupp "high" som inte finns i "low"
+  anti_join(high, low, by = "date")
+}
+
+#testar funktion
+tropical_dates(108320)
+```
+
+* **Figur för tropiska datum**
+
+```{r figur tropiska}
+
+#Sparar stationerna och dess namn
+station <- c(107440, 78550, 89230, 71420, 68560, 65090, 87440, 83420, 98160, 
+            99450, 77210, 66110, 108320, 78280)
+
+name <- c("Eggegrund", "Fårösund", "Gotska Sandön", "Göteborg", 
+                            "Hoburg", "Karlskrona-Söderstjerna", "Landsort", "Naven", 
+                            "Skarpö", "Söderarm", "Ölands norra udde", "Ölands södra udde", 
+                            "Örskär", "Östergarnsholm")
+
+stations <- tibble(station, name)
+
+#tar fram datum för varje station
+map_df(station, tropical_dates) %>%
+  mutate(
+    station = station %>% as.double(),
+    month = lubridate::month(date, label = TRUE),
+    day = lubridate::day(date)
+    ) %>%
+  unite(datum, month, day, sep = " ") %>%
+  mutate(datum = factor(datum)) %>%
+#får med staionernas namn, min temp och ger x-axeln rätt ordning
+  inner_join(stations) %>%
+  summarise(min = min(temp), datum, name) %>%
+  ggplot(aes(x = forcats::fct_relevel(datum, "Jun 25" ), name, color = min)) +
+  geom_point() +
+  theme_bw() +
+  labs(
+    title = "Tropiska (eller nästan tropiska) datum 2022",
+    x = NULL,
+    y = NULL,
+    color = "Min temp"
+  ) +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+* **Karta över temperaturer** Här har källa använts: [https://medium.com/@Periscopic/cozy-collecting-part-2-5e717588e37b](källa).
+
+
+```{r karta}
+plot_temp <- function(){
+
+#Hämtar API
+  response <- httr::GET("https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/1/station-set/all/period/latest-hour/data.json")
+  
+  temperatur_nu <- httr::content(response, as = "text") %>% jsonlite::fromJSON()
+
+#Gör om till tibble, ena kolummen innehåller en lista så vi tar ut den med unnest 
+  temperatur_tibble <- as_tibble(temperatur_nu$station)%>%
+    unnest_wider(value) %>%
+    filter(!is.na(value)) %>%
+    select(longitude, latitude, value)
+
+#Omvandlar temperatur från chr till num
+  temp <- pull(temperatur_tibble, value) %>% as.numeric
+  temperatur <- add_column(temperatur_tibble, temp)
+
+#Bakgrundskarta  
+  map <- rnaturalearth::ne_countries(country = "sweden", scale = "medium", returnclass = "sf")
+  
+#Illustrerar
+  ggplot(map) +
+    geom_sf() +
+    geom_point(data = temperatur, aes(x = longitude, y = latitude, color = temp)) +
+    scale_color_gradient(low = "yellow", high = "red") +
+    theme_void() +
+    labs(title = "Temperatur i Sverige 2022-08-11 12:00:00", color = "°C")
+  }
+
+plot_temp()
+ 
+```
+
+
+## Allsvenskans tabeller
+
+* **Funktion för att generera tabell**
+
+```{r skrapa}
+read_allsvenskan <- function(year){
+  #anpassar webadressen beroende på år och tar ut tabell
+  allsvenskan <- paste0("https://sv.wikipedia.org/wiki/Mall:Po%C3%A4ngtabell_f%C3%B6r_Fotbollsallsvenskan_", year)
+  page <- rvest::read_html(allsvenskan)
+  elements <- rvest::html_elements(page, css = "table")
+  table <- rvest::html_table(elements[[2]])
+  
+  #Om kolummen Lag har en fotnot tas den bort
+  if("Lag[1]" %in% names(table)) {
+    table <- rename(table, "Lag" = "Lag[1]")
+  }
+  
+  #Tar bort noteringar 
+  table %>%
+    mutate(
+      Lag = str_remove_all(Lag, " \\(U\\)"),
+      Lag = str_remove_all(Lag, " \\(RM\\)"),
+      Sasong = year) %>%
+    select(Sasong, Nr, Lag, S, V, O, F, GM, IM, MS, P)
+  } 
+
+read_allsvenskan(2021)
+
+```
+
+* **Illustration över målskillnad**
+
+```{r målskillnad}
+#Kombinerar tabeller
+map_df(seq(2008,2021), read_allsvenskan) %>%
+#Grupperar och räknar ut målskillnad, illustrerar sedan
+  group_by(Sasong, Lag) %>%
+  mutate(Malskillnad = (GM - IM) / S) %>%
+  ggplot(aes(Sasong, Malskillnad)) +
+  geom_line() +
+  geom_point(shape = 21, colour = "black", fill = "white", size = 1) +
+  facet_wrap(~Lag) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_x_continuous(breaks = seq(2009, 2021, by = 2)) +
+  labs(
+    title = "Genomsnittliga målskillnad per match och säsong",
+    caption = "Data från Wikipedia",
+    x = "Säsong",
+    y = "Målskillnad"
+    )
+
+```
+
+* **Tabellplaceringar**
+
+```{r tabellplaceringar}
+
+#Tar fram placeringar för de olika åren
+allsvenskan_summering <- map_df(seq(2008,2021), read_allsvenskan)
+
+allsvenskan_summering %>%
+  ggplot(aes(Sasong, Nr)) +
+  geom_line() +
+#Ger all data vita cirklar i plot
+  geom_point(shape = 21, colour = "black", fill = "white", size = 1) + 
+#Filtrerar ut varje års vinnare, ger de svarta cirklar i plot
+  geom_point(data = allsvenskan_summering %>% filter(Nr == "1"), color = "black", size = 1) +
+  facet_wrap(~Lag) +
+  theme_bw() +
+  labs(
+    title = "Tabellplaceringar i Allsvenskan säsongerna 2008-2021",
+    subtitle = "Svenska mästare markerad med ifylld cirkel",
+    caption = "Data från Wikipedia",
+    x = NULL,
+    y= NULL
+  ) +
+  scale_y_reverse() +
+  scale_x_continuous(breaks = seq(2009, 2021, by = 2)) +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
