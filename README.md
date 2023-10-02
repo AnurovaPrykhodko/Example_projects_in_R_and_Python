@@ -14,21 +14,21 @@ Mainly learning tidyverse, reading files, working in table format and visualizin
 
 **Laboration 2**
 
-Code file [Laboration2.Rmd](labortion2_files/Laboration2.Rmd)
+Code file [Laboration2.Rmd](laboartion2_files/Laboration2.Rmd)
 
-Compiled file [Laboration2.md](labortion2_files/Laboration2.md)
+Compiled file [Laboration2.md](laboartion2_files/Laboration2.md)
 
 **Laboration 3**
 
-Code file [Laboration3.Rmd](labortion3_files/Laboration3.Rmd)
+Code file [Laboration3.Rmd](laboration3_files/Laboration3.Rmd)
 
-Compiled file [Laboration3.md](labortion3_files/Laboration3.md)
+Compiled file [Laboration3.md](laboration3_files/Laboration3.md)
 
 **Laboration 4**
 
-Code file [Laboration4.Rmd](labortion4_files/Laboration4.Rmd)
+Code file [Laboration4.Rmd](laboration4_files/Laboration4.Rmd)
 
-Compiled file [Laboration4.md](labortion4_files/Laboration4.md)
+Compiled file [Laboration4.md](laboration4_files/Laboration4.md)
 
 ### In Pyton
 
