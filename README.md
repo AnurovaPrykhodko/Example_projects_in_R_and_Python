@@ -1,16 +1,16 @@
-# Examples of code I written
+# Examples from my bachelors program
 
 ### In R
 
 **Nuclear lab**
 
-Most recent, used for processing data taken from a lab, to create figures and tables for a report. This was never handed in, just for my own use. Figures and tables in folder. 
+Used for processing data taken from a lab, to create figures and tables for a report. This was never handed in, just for my own use. Figures and tables in folder. 
 
 Code file: [nuclearlab.R](nuclear_lab/nuclearlab.R)
 
 **Laborations from data proccessing course**
 
-Mainly learning tidyverse, reading files, working in table format and visualizing. Figures and tables in each folder. 
+Mainly learning tidyverse, reading files, data wrangling, and visualizing. Figures and tables in each folder. 
 
 **Laboration 2**
 
@@ -30,9 +30,7 @@ Code file [Laboration4.Rmd](laboration4_files/laboration4.Rmd)
 
 Compiled file [Laboration4.md](laboration4_files/laboration4.md)
 
-### In Pyton
-
-I choose to only include one project, since it summarises great deal of what I learnt. Other projects I done is in numerical methods and statistics, though even if those included many exercices they all are shorter. 
+### In Python
 
 **Programming course end project**
 
